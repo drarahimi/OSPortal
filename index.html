@@ -1479,8 +1479,11 @@
             
             els.modal.description.innerHTML = highlightText(project.Project_Description || 'No description available.', term);
             els.modal.tasks.innerHTML = highlightText(project.Student_Opportunities_and_Tasks || 'No specific tasks outlined.', term);
-            els.modal.competencies.innerHTML = highlightText(project.Anticipated_Competencies || 'Not specified.', term);
-            
+            const cleanStr = project.Anticipated_Competencies
+            .replace(/["\[\]]/g, ' ')
+            .trim()
+            .replace(/\s+,/g, ',');
+            els.modal.competencies.innerHTML = highlightText(cleanStr || 'Not specified.', term);          
             const emailSubject = encodeURIComponent(`Inquiry regarding research project: ${project.Project_Title || 'Research Project'}`);
             els.modal.email.textContent = project.Faculty_Contact_Email || 'Not provided';
             els.modal.email.href = project.Faculty_Contact_Email ? `mailto:${project.Faculty_Contact_Email}?subject=${emailSubject}` : '#';
