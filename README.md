@@ -95,4 +95,4 @@ Contributions are welcome and appreciated! To contribute:
 
 ## 📝 License
 
-This project is licensed under the [MIT License](https://www.google.com/search?q=LICENSE) - see the https://www.google.com/search?q=LICENSE file for details.
+This project is licensed under the [MIT License](LICENSE).
