@@ -1,0 +1,1601 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Outstanding Scholars Project Explorer</title>
+    
+    <!-- External Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/chartjs-chart-wordcloud@4.3.1"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <!-- Dark Mode Init Script (Prevents FOUC) -->
+    <script>
+        if (localStorage.getItem('os_theme') === 'dark' || (!('os_theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+        
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#005596', /* UWindsor Blue */
+                        accent: '#FFCE00',  /* UWindsor Gold */
+                        darkbg: '#0f172a',
+                        darkcard: '#1e293b',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Scrollbars */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        html.dark ::-webkit-scrollbar-thumb { background: #475569; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .glass-header { 
+            background: rgba(0, 85, 150, 0.95); 
+            backdrop-filter: blur(10px); 
+        }
+        html.dark .glass-header {
+            background: rgba(15, 23, 42, 0.95);
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+        .fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Modal Transitions */
+        .modal-overlay { opacity: 0; visibility: hidden; transition: all 0.3s ease-in-out; }
+        .modal-overlay.active { opacity: 1; visibility: visible; }
+        .modal-content { transform: scale(0.95) translateY(20px); transition: all 0.3s ease-in-out; }
+        .modal-overlay.active .modal-content { transform: scale(1) translateY(0); }
+        
+        /* Toast Notification */
+        #toast { transition: all 0.3s ease; transform: translateY(100%); opacity: 0; }
+        #toast.show { transform: translateY(0); opacity: 1; }
+
+        /* Search Highlights */
+        mark { background-color: #fef08a; color: #1f2937; padding: 0 0.125rem; border-radius: 0.125rem; }
+        html.dark mark { background-color: rgba(250, 204, 21, 0.3); color: #fef08a; }
+
+        /* Kanban Scroll */
+        .kanban-scroll { scroll-snap-type: x mandatory; }
+        .kanban-col { scroll-snap-align: start; }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-darkbg text-gray-800 dark:text-gray-200 font-sans min-h-screen flex flex-col transition-colors duration-300">
+
+    <!-- Header -->
+    <header class="glass-header text-white shadow-md sticky top-0 z-40 transition-colors duration-300">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <i class="ph ph-flask text-3xl text-accent"></i>
+                <h1 class="text-xl md:text-2xl font-bold tracking-tight hidden sm:block">Outstanding Scholars Explorer</h1>
+                <h1 class="text-xl font-bold tracking-tight sm:hidden">OS Explorer</h1>
+            </div>
+            <div class="flex items-center gap-3 md:gap-4">
+                <div id="projectCount" class="hidden md:block text-sm font-medium bg-white/20 dark:bg-slate-700 px-3 py-1 rounded-full">
+                    Loading...
+                </div>
+                <button onclick="openMatchMe()" class="flex items-center gap-2 bg-accent text-primary dark:text-gray-900 px-4 py-1.5 rounded-full font-bold text-sm hover:scale-105 transition-transform shadow-sm">
+                    <i class="ph ph-magic-wand"></i> Match Me
+                </button>
+                <button id="themeToggle" class="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-xl">
+                    <i class="ph ph-moon dark:hidden"></i>
+                    <i class="ph ph-sun hidden dark:block"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- App Banners Container -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full mt-4 space-y-3 empty:hidden" id="bannerContainer">
+        <!-- New Projects Banner (Injected dynamically) -->
+        <!-- Active Professor Banner (Injected dynamically) -->
+    </div>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col md:flex-row gap-8">
+        
+        <!-- Upload State -->
+        <div id="uploadState" class="hidden w-full h-[60vh] flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-2xl bg-white dark:bg-darkcard p-8 text-center fade-in">
+            <div class="w-20 h-20 bg-blue-50 dark:bg-slate-800 text-primary dark:text-blue-400 rounded-full flex items-center justify-center mb-4">
+                <i class="ph ph-file-csv text-4xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-800 dark:text-white mb-2">Load Project Data</h2>
+            <p class="text-gray-500 dark:text-slate-400 max-w-md mb-6">We couldn't auto-load "Available Projects.csv". Please drag and drop your CSV file here or click to browse.</p>
+            <input type="file" id="csvFileInput" accept=".csv" class="hidden">
+            <button onclick="document.getElementById('csvFileInput').click()" class="bg-primary hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-semibold py-3 px-8 rounded-lg shadow-sm transition-colors duration-200 flex items-center gap-2">
+                <i class="ph ph-upload-simple"></i> Select CSV File
+            </button>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="w-full h-[40vh] flex flex-col items-center justify-center fade-in">
+            <i class="ph ph-spinner-gap animate-spin text-4xl text-primary dark:text-blue-400 mb-4"></i>
+            <p class="text-gray-500 dark:text-slate-400 font-medium">Loading repository...</p>
+        </div>
+
+        <!-- App State -->
+        <div id="appState" class="hidden w-full flex-col md:flex-row gap-8 fade-in">
+            
+            <!-- Sidebar -->
+            <aside class="w-full md:w-72 lg:w-80 flex-shrink-0 flex flex-col gap-4">
+                
+                <!-- Sidebar Tabs -->
+                <div class="flex bg-gray-200/50 dark:bg-slate-800/50 p-1 rounded-xl">
+                    <button id="btnTabFilters" class="flex-1 py-2 text-sm font-bold rounded-lg bg-white dark:bg-slate-700 shadow-sm text-primary dark:text-white transition-all">
+                        <i class="ph ph-funnel mr-1"></i> Filters
+                    </button>
+                    <button id="btnTabInsights" class="flex-1 py-2 text-sm font-bold rounded-lg text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 transition-all" title="View interactive charts">
+                        <i class="ph ph-chart-pie-slice mr-1"></i> Insights
+                    </button>
+                </div>
+
+                <!-- FILTERS PANEL -->
+                <div id="panelFilters" class="space-y-6 block">
+                    <!-- Search -->
+                    <div class="bg-white dark:bg-darkcard p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 transition-colors">
+                        <div class="relative">
+                            <input type="text" id="searchInput" placeholder="Search keywords, titles..." class="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 text-gray-800 dark:text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all placeholder-gray-400 dark:placeholder-gray-500">
+                            <i class="ph ph-magnifying-glass absolute left-3 top-3.5 text-gray-400 dark:text-gray-500"></i>
+                        </div>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="bg-white dark:bg-darkcard p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 transition-colors">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-bold text-gray-800 dark:text-white uppercase tracking-wider">Refine By</h3>
+                            <button id="resetFilters" class="text-xs text-primary dark:text-blue-400 hover:underline hidden">Reset All</button>
+                        </div>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 dark:text-slate-400 mb-1">Sort By</label>
+                                <select id="sortFilter" class="w-full p-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 text-gray-800 dark:text-gray-200 text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                    <option value="default">Default Order</option>
+                                    <option value="newest">Newly Added First</option>
+                                    <option value="oldest">Newly Added Last</option>
+                                    <option value="titleAsc">Title (A-Z)</option>
+                                    <option value="titleDesc">Title (Z-A)</option>
+                                    <option value="dateAsc">End Date (Soonest First)</option>
+                                    <option value="dateDesc">End Date (Latest First)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 dark:text-slate-400 mb-1">Faculty</label>
+                                <select id="facultyFilter" class="w-full p-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 text-gray-800 dark:text-gray-200 text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                    <option value="">All Faculties</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-500 dark:text-slate-400 mb-1">Department</label>
+                                <select id="departmentFilter" class="w-full p-2 bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-600 text-gray-800 dark:text-gray-200 text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50">
+                                    <option value="">All Departments</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Toggles -->
+                        <div class="mt-5 space-y-3 border-t border-gray-100 dark:border-slate-700 pt-4">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="remoteFilter" class="w-4 h-4 text-primary border-gray-300 dark:border-slate-600 rounded bg-gray-50 dark:bg-slate-800 focus:ring-primary focus:ring-offset-0">
+                                <span class="text-sm text-gray-700 dark:text-gray-300"><i class="ph ph-laptop"></i> Remote / Online Only</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="communityFilter" class="w-4 h-4 text-primary border-gray-300 dark:border-slate-600 rounded bg-gray-50 dark:bg-slate-800 focus:ring-primary focus:ring-offset-0">
+                                <span class="text-sm text-gray-700 dark:text-gray-300"><i class="ph ph-users-three"></i> Community Partners</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Program Info Card -->
+                    <div class="bg-white dark:bg-darkcard p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 transition-colors">
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <i class="ph ph-student text-primary dark:text-blue-400 text-lg"></i> Program Info
+                        </h3>
+                        <p class="text-xs text-gray-600 dark:text-slate-400 mb-4 leading-relaxed">
+                            The Outstanding Scholars program provides exceptional undergraduate students the opportunity to be mentored in academic research by University of Windsor faculty.
+                        </p>
+                        <div class="space-y-3">
+                            <a href="https://www.uwindsor.ca/outstandingscholars/" target="_blank" class="flex items-center gap-2 text-sm text-primary dark:text-blue-400 hover:underline group font-medium">
+                                <i class="ph ph-globe text-lg group-hover:scale-110 transition-transform"></i> Official Website
+                            </a>
+                            <a href="mailto:scholars@uwindsor.ca" class="flex items-center gap-2 text-sm text-primary dark:text-blue-400 hover:underline group font-medium">
+                                <i class="ph ph-envelope-simple text-lg group-hover:scale-110 transition-transform"></i> scholars@uwindsor.ca
+                            </a>
+                            <a href="https://www.uwindsor.ca/outstandingscholars/302/faq" target="_blank" class="flex items-center gap-2 text-sm text-primary dark:text-blue-400 hover:underline group font-medium">
+                                <i class="ph ph-question text-lg group-hover:scale-110 transition-transform"></i> Frequently Asked Questions
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Credit for Creator Card -->
+                    <div class="bg-white dark:bg-darkcard p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700 transition-colors">
+                        <h3 class="text-sm font-bold text-gray-800 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <i class="ph ph-student text-primary dark:text-blue-400 text-lg"></i> About
+                        </h3>
+                        <p class="text-xs text-gray-600 dark:text-slate-400 mb-4 leading-relaxed">
+                            This portal was created by <strong>Dr. Afshin Rahimi</strong> from the department of Mechanical, Automotive and Materials Engineering for students and faculty to be able to better explort these opportunities.
+                        </p>
+                        <div class="space-y-3">
+                            <a href="https://www.arahimi.ca/" target="_blank" class="flex items-center gap-2 text-sm text-primary dark:text-blue-400 hover:underline group font-medium">
+                                <i class="ph ph-globe text-lg group-hover:scale-110 transition-transform"></i> Official Website
+                            </a>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- INSIGHTS PANEL -->
+                <div id="panelInsights" class="hidden space-y-4">
+                    <p class="text-xs text-gray-500 dark:text-slate-400 italic text-center mb-2">Click any chart element to filter projects.</p>
+
+                    <div class="bg-white dark:bg-darkcard p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
+                        <h4 class="text-sm font-bold text-gray-800 dark:text-white mb-3 border-b border-gray-100 dark:border-slate-700 pb-2">Projects by Faculty</h4>
+                        <div class="relative w-full h-80 flex items-center justify-center">
+                            <canvas id="facultyChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-white dark:bg-darkcard p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
+                        <h4 class="text-sm font-bold text-gray-800 dark:text-white mb-3 border-b border-gray-100 dark:border-slate-700 pb-2">Top Departments</h4>
+                        <div class="relative w-full h-80 flex items-center justify-center">
+                            <canvas id="departmentChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-white dark:bg-darkcard p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
+                        <h4 class="text-sm font-bold text-gray-800 dark:text-white mb-3 border-b border-gray-100 dark:border-slate-700 pb-2">Delivery Format</h4>
+                        <div class="relative w-full h-40 flex items-center justify-center">
+                            <canvas id="onlineChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-white dark:bg-darkcard p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
+                        <h4 class="text-sm font-bold text-gray-800 dark:text-white mb-3 border-b border-gray-100 dark:border-slate-700 pb-2">Top Competencies</h4>
+                        <div class="relative w-full h-48">
+                            <canvas id="competenciesChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-white dark:bg-darkcard p-5 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
+                        <h4 class="text-sm font-bold text-gray-800 dark:text-white mb-3 border-b border-gray-100 dark:border-slate-700 pb-2">Top Supervisors</h4>
+                        <ul id="supervisorList" class="space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                            <!-- Populated by JS -->
+                        </ul>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Projects Area -->
+            <section class="flex-1 flex flex-col min-w-0">
+                
+                <!-- View Toggles -->
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-800 dark:text-white" id="viewTitle">Projects Repository</h2>
+                        <p class="text-sm text-gray-500 dark:text-slate-400 mt-1" id="viewSubtitle">Explore and track available opportunities.</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button onclick="exportShortlist()" class="text-sm font-bold text-gray-500 hover:text-primary dark:text-gray-400 dark:hover:text-blue-400 transition-colors flex items-center gap-1" title="Export Tracker to CSV">
+                            <i class="ph ph-download-simple text-lg"></i> <span class="hidden sm:inline">Export Tracker</span>
+                        </button>
+                        <div class="flex bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 overflow-hidden shrink-0">
+                            <button id="btnViewGrid" class="px-4 py-2 bg-gray-100 dark:bg-slate-700 text-primary dark:text-white border-r border-gray-200 dark:border-slate-600 transition-colors" title="Grid View">
+                                <i class="ph ph-squares-four text-xl"></i>
+                            </button>
+                            <button id="btnViewTimeline" class="px-4 py-2 text-gray-400 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700 border-r border-gray-200 dark:border-slate-600 transition-colors" title="Timeline View">
+                                <i class="ph ph-list-dashes text-xl"></i>
+                            </button>
+                            <button id="btnViewKanban" class="px-4 py-2 text-gray-400 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors" title="Application Tracker (Board View)">
+                                <i class="ph ph-kanban text-xl"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Empty State -->
+                <div id="noResults" class="hidden bg-white dark:bg-darkcard p-12 rounded-xl border border-gray-100 dark:border-slate-700 text-center shadow-sm">
+                    <i class="ph ph-magnifying-glass text-5xl text-gray-300 dark:text-slate-600 mb-4"></i>
+                    <h3 class="text-xl font-bold text-gray-700 dark:text-white mb-2">No projects found</h3>
+                    <p class="text-gray-500 dark:text-slate-400">Try adjusting your search terms or clearing your filters.</p>
+                </div>
+                
+                <!-- Main Data Container (Grid, Timeline, or Kanban) -->
+                <div id="projectsContainer" class="w-full h-full flex flex-col">
+                    <!-- Populated by JS -->
+                </div>
+                
+                <!-- Load More Button -->
+                <div id="loadMoreContainer" class="hidden mt-8 justify-center pb-8">
+                    <button id="loadMoreBtn" class="px-6 py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 shadow-sm rounded-lg text-primary dark:text-blue-400 font-semibold hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-2">
+                        <i class="ph ph-plus-circle text-lg"></i> Load More Projects
+                    </button>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Match Me Assistant Modal -->
+    <div id="matchMeModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4 modal-overlay bg-gray-900/70 backdrop-blur-sm">
+        <div class="bg-white dark:bg-darkcard w-full max-w-lg rounded-2xl shadow-2xl flex flex-col modal-content overflow-hidden border border-gray-200 dark:border-slate-700">
+            <div class="p-6 bg-gradient-to-r from-primary to-blue-800 text-white relative">
+                <button onclick="closeMatchMe()" class="absolute top-4 right-4 text-white/80 hover:text-white p-1"><i class="ph ph-x text-2xl"></i></button>
+                <i class="ph ph-magic-wand text-3xl text-accent mb-2"></i>
+                <h2 class="text-2xl font-bold">Match Me Assistant</h2>
+                <p class="text-blue-100 text-sm mt-1">Answer 3 quick questions to find your ideal projects.</p>
+            </div>
+            <div class="p-6 space-y-5 bg-gray-50 dark:bg-slate-900">
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">1. What is your Faculty?</label>
+                    <select id="mmFaculty" class="w-full p-2.5 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-800 dark:text-white focus:ring-2 focus:ring-primary/50">
+                        <option value="">Any Faculty</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">2. Do you need to work remotely?</label>
+                    <select id="mmRemote" class="w-full p-2.5 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-800 dark:text-white focus:ring-2 focus:ring-primary/50">
+                        <option value="no">No preference</option>
+                        <option value="yes">Yes, show only remote/online options</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">3. Name a skill or topic you like:</label>
+                    <input type="text" id="mmSkills" placeholder="e.g., Python, data analysis, psychology" class="w-full p-2.5 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-800 dark:text-white focus:ring-2 focus:ring-primary/50">
+                </div>
+            </div>
+            <div class="p-4 bg-white dark:bg-darkcard border-t border-gray-200 dark:border-slate-700 flex justify-end gap-3">
+                <button onclick="closeMatchMe()" class="px-5 py-2 text-gray-600 dark:text-gray-400 font-semibold hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors">Cancel</button>
+                <button onclick="applyMatchMe()" class="px-5 py-2 bg-primary hover:bg-blue-700 text-white font-bold rounded-lg transition-colors shadow-md">Find My Matches</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project Details Modal -->
+    <div id="projectModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 modal-overlay bg-gray-900/60 backdrop-blur-sm">
+        <div class="bg-white dark:bg-darkcard w-full max-w-5xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col modal-content overflow-hidden relative border border-gray-200 dark:border-slate-700">
+            
+            <!-- Modal Header -->
+            <div class="bg-primary dark:bg-slate-800 text-white p-6 md:p-8 shrink-0 relative transition-colors">
+                <div class="absolute top-4 right-4 flex gap-2 z-10">
+                    <button id="btnCopyLink" class="text-white/80 hover:text-white hover:bg-white/10 p-2 rounded-full transition-colors" title="Copy Link to Project">
+                        <i class="ph ph-link text-2xl"></i>
+                    </button>
+                    <button onclick="closeModal()" class="text-white/80 hover:text-white hover:bg-white/10 p-2 rounded-full transition-colors" title="Close">
+                        <i class="ph ph-x text-2xl"></i>
+                    </button>
+                </div>
+                
+                <div class="flex flex-wrap gap-2 mb-3 pr-20" id="modalBadges">
+                    <span id="modalFaculty" class="text-xs font-bold uppercase tracking-wider bg-accent text-primary px-3 py-1 rounded-full shadow-sm">Faculty</span>
+                    <span id="modalDept" class="text-xs font-bold uppercase tracking-wider bg-white/20 text-white px-3 py-1 rounded-full shadow-sm border border-white/10">Department</span>
+                </div>
+                
+                <h2 id="modalTitle" class="text-2xl md:text-3xl font-bold leading-tight mb-2 pr-10">Project Title</h2>
+                
+                <div class="flex flex-wrap items-center gap-4 text-white/70 text-xs font-mono mb-3">
+                    <span id="modalProjectIdWrapper" class="hidden flex items-center gap-1" title="Project ID Number"><i class="ph ph-hash"></i> <span id="modalProjectId">ID</span></span>
+                    <span id="modalSystemIdWrapper" class="hidden flex items-center gap-1" title="System ID"><i class="ph ph-database"></i> <span id="modalSystemId">ID</span></span>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-4 text-white/90 text-sm mt-2">
+                    <span class="flex items-center gap-1 cursor-pointer hover:text-accent transition-colors" onclick="filterFromModalSupervisor()" title="View all projects by this supervisor"><i class="ph ph-user"></i> <span id="modalSupervisor">Name</span></span>
+                    <span class="flex items-center gap-1"><i class="ph ph-calendar-plus"></i> Posted: <span id="modalPostedDate">Date</span></span>
+                    <span class="flex items-center gap-1"><i class="ph ph-calendar-blank"></i> Ends: <span id="modalEndDate">Date</span></span>
+                    <span id="modalOnlineBadge" class="hidden flex items-center gap-1 bg-green-500/20 border border-green-400/30 text-green-100 px-2 py-0.5 rounded shadow-sm"><i class="ph ph-laptop"></i> Remote Option</span>
+                </div>
+
+                <!-- App Tracker Actions -->
+                <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-white/20 pt-4">
+                    <label class="text-sm font-bold flex items-center gap-2"><i class="ph ph-kanban"></i> My Application Status:</label>
+                    <select id="modalStatusSelect" class="bg-white text-gray-800 dark:bg-slate-700 dark:text-white text-sm font-semibold rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent border-none shadow-sm cursor-pointer">
+                        <option value="none">Not Saved</option>
+                        <option value="shortlisted">⭐ Shortlisted</option>
+                        <option value="emailed">✉️ Emailed Supervisor</option>
+                        <option value="interviewing">🗣️ Interviewing</option>
+                        <option value="accepted">✅ Accepted!</option>
+                    </select>
+                    <div class="flex-1 text-right">
+                        <button onclick="generatePoster()" class="text-xs bg-white/20 hover:bg-white/30 text-white font-semibold py-1.5 px-3 rounded-lg transition-colors flex items-center gap-1.5 inline-flex shadow-sm border border-white/10">
+                            <i class="ph ph-printer"></i> Generate Flyer (PDF)
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 md:p-8 overflow-y-auto bg-gray-50 dark:bg-darkbg flex-1 space-y-8">
+                <div class="bg-white dark:bg-darkcard p-6 rounded-xl border border-gray-100 dark:border-slate-700 shadow-sm">
+                    <h3 class="text-lg font-bold text-primary dark:text-blue-400 mb-3 flex items-center gap-2">
+                        <i class="ph ph-info"></i> Project Description
+                    </h3>
+                    <div id="modalDescription" class="text-gray-600 dark:text-gray-300 leading-relaxed whitespace-pre-wrap"></div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-white dark:bg-darkcard p-6 rounded-xl border border-gray-100 dark:border-slate-700 shadow-sm">
+                        <h3 class="text-lg font-bold text-primary dark:text-blue-400 mb-3 flex items-center gap-2">
+                            <i class="ph ph-student"></i> Opportunities & Tasks
+                        </h3>
+                        <div id="modalTasks" class="text-gray-600 dark:text-gray-300 text-sm leading-relaxed whitespace-pre-wrap"></div>
+                    </div>
+                    
+                    <div class="space-y-6">
+                        <div class="bg-white dark:bg-darkcard p-6 rounded-xl border border-gray-100 dark:border-slate-700 shadow-sm">
+                            <h3 class="text-lg font-bold text-primary dark:text-blue-400 mb-3 flex items-center gap-2">
+                                <i class="ph ph-envelope-simple"></i> Contact Information
+                            </h3>
+                            <div class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                                <p><strong>Email:</strong> <a id="modalEmail" href="#" class="text-blue-600 dark:text-blue-400 hover:underline break-all">email@uwindsor.ca</a></p>
+                                <p><strong>Phone Ext:</strong> <span id="modalPhone">-</span></p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white dark:bg-darkcard p-6 rounded-xl border border-gray-100 dark:border-slate-700 shadow-sm">
+                            <h3 class="text-lg font-bold text-primary dark:text-blue-400 mb-3 flex items-center gap-2">
+                                <i class="ph ph-star"></i> Anticipated Competencies
+                            </h3>
+                            <div id="modalCompetencies" class="text-gray-600 dark:text-gray-300 text-sm leading-relaxed whitespace-pre-wrap"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Similar Projects Engine -->
+                <div class="pt-6 border-t border-gray-200 dark:border-gray-700">
+                    <h3 class="text-lg font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
+                        <i class="ph ph-magic-wand text-primary dark:text-blue-400"></i> You might also be interested in...
+                    </h3>
+                    <div id="modalSimilarProjects" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Poster Template for PDF Generation -->
+    <div id="flyerTemplateWrapper" style="display:none; position:absolute; top:-9999px; left:-9999px;">
+        <div id="flyerTemplate" style="width: 800px; padding: 50px; background: white; color: #1f2937; font-family: sans-serif; box-sizing: border-box;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 4px solid #005596; padding-bottom: 20px;" class="mb-6">
+                <div>
+                    <h1 style="color: #005596; font-size: 28px; margin: 0 0 10px 0; max-width: 550px;" id="flyerTitle">Project Title</h1>
+                    <p style="margin: 0; font-size: 16px; font-weight: bold; color: #4b5563;" id="flyerSupervisor">Supervisor Name</p>
+                    <p style="margin: 5px 0 0 0; font-size: 14px; color: #6b7280;" id="flyerDept">Department Name</p>
+                </div>
+                <div style="text-align: center;">
+                    <div id="flyerQR" style="margin-bottom: 5px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px;"></div>
+                    <span style="font-size: 12px; color: #6b7280; font-weight:bold;">Scan to Apply</span>
+                </div>
+            </div>
+            
+            <h3 style="color: #005596; font-size: 18px; margin-top: 30px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Project Description</h3>
+            <p style="font-size: 14px; line-height: 1.6; color: #374151; white-space: pre-wrap;" id="flyerDesc">Description here</p>
+
+            <div style="display: flex; gap: 40px; margin-top: 30px;">
+                <div style="flex: 1;">
+                    <h3 style="color: #005596; font-size: 18px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Opportunities & Tasks</h3>
+                    <p style="font-size: 14px; line-height: 1.6; color: #374151; white-space: pre-wrap;" id="flyerTasks">Tasks here</p>
+                </div>
+                <div style="flex: 1;">
+                    <h3 style="color: #005596; font-size: 18px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px;">Competencies Required</h3>
+                    <p style="font-size: 14px; line-height: 1.6; color: #374151; white-space: pre-wrap;" id="flyerComps">Comps here</p>
+                </div>
+            </div>
+
+            <div style="margin-top: 40px; padding: 20px; background: #f3f4f6; border-radius: 8px; text-align: center;">
+                <p style="margin: 0; font-size: 14px; font-weight: bold; color: #1f2937;">Interested? Contact the supervisor directly:</p>
+                <p style="margin: 5px 0 0 0; font-size: 16px; color: #005596; font-weight: bold;" id="flyerEmail">email@uwindsor.ca</p>
+            </div>
+            <div style="margin-top: 30px; text-align: center; color: #9ca3af; font-size: 12px; border-top: 1px solid #e5e7eb; padding-top: 10px;">
+                Generated via Outstanding Scholars Research Portal
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-4 right-4 bg-gray-800 dark:bg-slate-100 text-white dark:text-gray-900 px-6 py-3 rounded-lg shadow-xl flex items-center gap-2 z-[70] font-medium border border-gray-700 dark:border-gray-200">
+        <i class="ph ph-check-circle text-green-400 dark:text-green-600 text-xl"></i>
+        <span id="toastMsg">Action successful!</span>
+    </div>
+
+    <script>
+        // --- Dark Mode Logic ---
+        const themeToggleBtn = document.getElementById('themeToggle');
+        themeToggleBtn.addEventListener('click', () => {
+            document.documentElement.classList.toggle('dark');
+            const isDark = document.documentElement.classList.contains('dark');
+            localStorage.setItem('os_theme', isDark ? 'dark' : 'light');
+            if (filteredProjects.length > 0 && !els.panelInsights.classList.contains('hidden')) updateCharts(); // redraw charts with new colors
+        });
+
+        // --- Helper Functions ---
+        function formatDateYYYYMMDD(dateString) {
+            if (!dateString || dateString.trim() === '') return 'TBD';
+            const d = new Date(dateString);
+            if (isNaN(d.getTime())) return dateString; 
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function highlightText(text, term) {
+            if (!text) return '';
+            if (!term || term.trim() === '') return text;
+            // Escape special regex chars in term
+            const safeTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${safeTerm})`, 'gi');
+            // Basic replacement (assumes text has no raw HTML tags to break)
+            return text.replace(regex, '<mark>$1</mark>');
+        }
+
+        // --- State Management ---
+        let allProjects = [];
+        let filteredProjects = [];
+        let currentPage = 1;
+        const itemsPerPage = 12;
+        let mostRecentDateMs = 0;
+        let currentView = 'grid'; // 'grid', 'timeline', or 'kanban'
+        let currentProjectInModal = null;
+        let activeProfessorFilter = null; // Used for "Professor Profile" mode
+
+        // CRM State: Migrate old array format to object if needed
+        let crmState = JSON.parse(localStorage.getItem('os_crm_data') || 'null');
+        if (!crmState) {
+            crmState = {};
+            // Migrate old "savedProjectsId" array if it exists
+            let oldIds = JSON.parse(localStorage.getItem('uwindsor_saved_projects') || '[]');
+            oldIds.forEach(id => crmState[id] = 'shortlisted');
+            localStorage.setItem('os_crm_data', JSON.stringify(crmState));
+        }
+
+        // Last Visit Tracker
+        const lastVisitStr = localStorage.getItem('os_last_visit');
+        const lastVisitDate = lastVisitStr ? parseInt(lastVisitStr) : Date.now();
+        localStorage.setItem('os_last_visit', Date.now().toString());
+
+        // --- Chart Instances ---
+        let wordCloudInstance = null;
+        let competenciesChartInstance = null;
+        let onlineChartInstance = null;
+        let facultyChartInstance = null;
+        let departmentChartInstance = null;
+
+        // --- DOM Elements ---
+        const els = {
+            loadingState: document.getElementById('loadingState'),
+            uploadState: document.getElementById('uploadState'),
+            appState: document.getElementById('appState'),
+            bannerContainer: document.getElementById('bannerContainer'),
+            fileInput: document.getElementById('csvFileInput'),
+            
+            // Sidebar Elements
+            btnTabFilters: document.getElementById('btnTabFilters'),
+            btnTabInsights: document.getElementById('btnTabInsights'),
+            panelFilters: document.getElementById('panelFilters'),
+            panelInsights: document.getElementById('panelInsights'),
+            
+            // Filter Inputs
+            searchInput: document.getElementById('searchInput'),
+            sortFilter: document.getElementById('sortFilter'),
+            facultyFilter: document.getElementById('facultyFilter'),
+            departmentFilter: document.getElementById('departmentFilter'),
+            remoteFilter: document.getElementById('remoteFilter'),
+            communityFilter: document.getElementById('communityFilter'),
+            resetFilters: document.getElementById('resetFilters'),
+            
+            // Display Elements
+            projectsContainer: document.getElementById('projectsContainer'),
+            noResults: document.getElementById('noResults'),
+            projectCount: document.getElementById('projectCount'),
+            loadMoreBtn: document.getElementById('loadMoreBtn'),
+            loadMoreContainer: document.getElementById('loadMoreContainer'),
+            
+            // View Toggles
+            btnViewGrid: document.getElementById('btnViewGrid'),
+            btnViewTimeline: document.getElementById('btnViewTimeline'),
+            btnViewKanban: document.getElementById('btnViewKanban'),
+            
+            // Toast
+            toast: document.getElementById('toast'),
+            toastMsg: document.getElementById('toastMsg'),
+
+            // Modals
+            modal: {
+                overlay: document.getElementById('projectModal'),
+                badges: document.getElementById('modalBadges'),
+                title: document.getElementById('modalTitle'),
+                projectId: document.getElementById('modalProjectId'),
+                projectIdWrapper: document.getElementById('modalProjectIdWrapper'),
+                systemId: document.getElementById('modalSystemId'),
+                systemIdWrapper: document.getElementById('modalSystemIdWrapper'),
+                faculty: document.getElementById('modalFaculty'),
+                dept: document.getElementById('modalDept'),
+                supervisor: document.getElementById('modalSupervisor'),
+                postedDate: document.getElementById('modalPostedDate'),
+                endDate: document.getElementById('modalEndDate'),
+                description: document.getElementById('modalDescription'),
+                tasks: document.getElementById('modalTasks'),
+                competencies: document.getElementById('modalCompetencies'),
+                email: document.getElementById('modalEmail'),
+                phone: document.getElementById('modalPhone'),
+                onlineBadge: document.getElementById('modalOnlineBadge'),
+                statusSelect: document.getElementById('modalStatusSelect'),
+                btnCopyLink: document.getElementById('btnCopyLink'),
+                similarProjects: document.getElementById('modalSimilarProjects')
+            },
+            matchMe: {
+                overlay: document.getElementById('matchMeModal'),
+                faculty: document.getElementById('mmFaculty'),
+                remote: document.getElementById('mmRemote'),
+                skills: document.getElementById('mmSkills')
+            }
+        };
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            fetch('Available Projects.csv')
+                .then(response => { if (!response.ok) throw new Error(); return response.text(); })
+                .then(csvText => parseCSV(csvText))
+                .catch(err => {
+                    els.loadingState.classList.add('hidden');
+                    els.uploadState.classList.remove('hidden');
+                    els.uploadState.classList.add('flex');
+                });
+
+            setupDragAndDrop();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            // Filter Events
+            ['input', 'change'].forEach(evt => {
+                els.searchInput.addEventListener(evt, () => { activeProfessorFilter=null; applyFilters(); });
+                els.sortFilter.addEventListener(evt, () => { applyFilters(); updateResetButton(); });
+                els.facultyFilter.addEventListener(evt, () => { applyFilters(); updateResetButton(); });
+                els.departmentFilter.addEventListener(evt, () => { applyFilters(); updateResetButton(); });
+                els.remoteFilter.addEventListener(evt, () => { applyFilters(); updateResetButton(); });
+                els.communityFilter.addEventListener(evt, () => { applyFilters(); updateResetButton(); });
+            });
+            
+            els.resetFilters.addEventListener('click', resetFilters);
+            els.fileInput.addEventListener('change', handleFileUpload);
+            els.loadMoreBtn.addEventListener('click', () => { currentPage++; renderProjects(true); });
+            
+            // View Toggles
+            els.btnViewGrid.addEventListener('click', () => setView('grid'));
+            els.btnViewTimeline.addEventListener('click', () => setView('timeline'));
+            els.btnViewKanban.addEventListener('click', () => setView('kanban'));
+
+            // Sidebar Tabs
+            els.btnTabFilters.addEventListener('click', () => switchSidebarTab('filters'));
+            els.btnTabInsights.addEventListener('click', () => switchSidebarTab('insights'));
+
+            // Modal Events
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeModal(); closeMatchMe(); } });
+            els.modal.overlay.addEventListener('click', (e) => { if (e.target === els.modal.overlay) closeModal(); });
+            els.modal.btnCopyLink.addEventListener('click', copyProjectLink);
+            els.modal.statusSelect.addEventListener('change', updateProjectStatusFromModal);
+        }
+
+        // --- CSV Processing ---
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            Papa.parse(file, { header: true, skipEmptyLines: true, complete: function(results) { processData(results.data); } });
+        }
+
+        function parseCSV(csvText) {
+            Papa.parse(csvText, { header: true, skipEmptyLines: true, complete: function(results) { processData(results.data); } });
+        }
+
+        function getProjectId(p) { return p.Project_ID_Number || p.ID || p.Project_Title; }
+
+        function processData(data) {
+            allProjects = data.map(row => {
+                let cleanedRow = {};
+                for (let key in row) {
+                    let val = row[key];
+                    cleanedRow[key.trim()] = typeof val === 'string' ? val.trim() : val;
+                }
+                return cleanedRow;
+            }).filter(row => row.Project_Title && row.Project_Title.trim() !== "");
+
+            filteredProjects = [...allProjects];
+            
+            // Find most recent created date for "NEW" badge logic and last visit logic
+            let newProjectCount = 0;
+            allProjects.forEach(p => {
+                if (p.Created) {
+                    const dMs = new Date(p.Created).getTime();
+                    if (!isNaN(dMs)) {
+                        if (dMs > mostRecentDateMs) mostRecentDateMs = dMs;
+                        if (dMs > lastVisitDate && lastVisitStr) newProjectCount++; // Only count if returning visitor
+                    }
+                }
+            });
+
+            // Populate Dropdowns
+            const faculties = [...new Set(allProjects.map(p => p.Faculty).filter(Boolean))].sort();
+            const departments = [...new Set(allProjects.map(p => p.Department_School_of_Research).filter(Boolean))].sort();
+
+            faculties.forEach(f => {
+                els.facultyFilter.add(new Option(f, f));
+                els.matchMe.faculty.add(new Option(f, f));
+            });
+            departments.forEach(d => els.departmentFilter.add(new Option(d, d)));
+
+            // Handle URL parameters (Deep Link)
+            const urlParams = new URLSearchParams(window.location.search);
+            const linkId = urlParams.get('project');
+            if (linkId) {
+                const targetProject = allProjects.find(p => getProjectId(p) === linkId);
+                if (targetProject) openModal(targetProject);
+            }
+
+            // Show UI
+            els.loadingState.classList.add('hidden');
+            els.uploadState.classList.add('hidden');
+            els.uploadState.classList.remove('flex');
+            els.appState.classList.remove('hidden');
+            els.appState.classList.add('flex');
+
+            // Render New Banner if applicable
+            if (newProjectCount > 0) {
+                const banner = document.createElement('div');
+                banner.className = "bg-green-100 dark:bg-green-900/40 border border-green-200 dark:border-green-800 p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm fade-in";
+                banner.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="bg-green-500 text-white p-2 rounded-full"><i class="ph ph-bell-ringing text-xl"></i></div>
+                        <div>
+                            <h4 class="font-bold text-green-800 dark:text-green-300">Welcome Back!</h4>
+                            <p class="text-sm text-green-700 dark:text-green-400"><span class="font-bold">${newProjectCount} new projects</span> have been added since your last visit.</p>
+                        </div>
+                    </div>
+                    <button onclick="filterNewOnly()" class="shrink-0 bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-2 px-4 rounded-lg transition-colors shadow-sm">
+                        View New Projects
+                    </button>
+                `;
+                els.bannerContainer.appendChild(banner);
+            }
+
+            applyFilters();
+        }
+
+        // --- Filtering & Logic ---
+        window.filterNewOnly = function() {
+            els.sortFilter.value = 'newest';
+            els.bannerContainer.innerHTML = ''; // Dismiss banner
+            applyFilters();
+            showToast("Showing newest projects first.");
+        }
+
+        window.filterByProfessor = function(profName) {
+            activeProfessorFilter = profName;
+            els.searchInput.value = '';
+            els.facultyFilter.value = '';
+            els.departmentFilter.value = '';
+            els.remoteFilter.checked = false;
+            els.communityFilter.checked = false;
+            els.sortFilter.value = 'default';
+            
+            // Build Professor Banner
+            els.bannerContainer.innerHTML = '';
+            const banner = document.createElement('div');
+            banner.className = "bg-blue-50 dark:bg-slate-800 border border-blue-200 dark:border-slate-700 p-4 rounded-xl flex items-center justify-between shadow-sm fade-in";
+            banner.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <div class="bg-primary text-white p-2 rounded-full"><i class="ph ph-user text-xl"></i></div>
+                    <div>
+                        <h4 class="font-bold text-primary dark:text-white">Professor Profile View</h4>
+                        <p class="text-sm text-gray-600 dark:text-gray-300">Showing all projects supervised by <span class="font-bold">${profName}</span></p>
+                    </div>
+                </div>
+                <button onclick="clearProfessorFilter()" class="text-gray-500 hover:text-red-500 transition-colors p-2" title="Clear Filter">
+                    <i class="ph ph-x-circle text-2xl"></i>
+                </button>
+            `;
+            els.bannerContainer.appendChild(banner);
+            
+            setView('grid');
+            applyFilters();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        window.filterFromModalSupervisor = function() {
+            if(!currentProjectInModal) return;
+            const prof = currentProjectInModal.Faculty_Member_Name;
+            if(prof) {
+                closeModal();
+                setTimeout(() => filterByProfessor(prof), 300);
+            }
+        }
+
+        window.clearProfessorFilter = function() {
+            activeProfessorFilter = null;
+            els.bannerContainer.innerHTML = '';
+            applyFilters();
+        }
+
+        function applyFilters() {
+            const searchTerm = els.searchInput.value.toLowerCase();
+            const faculty = els.facultyFilter.value;
+            const dept = els.departmentFilter.value;
+            const showRemote = els.remoteFilter.checked;
+            const showCommunity = els.communityFilter.checked;
+
+            filteredProjects = allProjects.filter(p => {
+                // Professor Profile Override
+                if (activeProfessorFilter && p.Faculty_Member_Name !== activeProfessorFilter) return false;
+
+                if (showRemote && (!p.Research_Completed_Online || p.Research_Completed_Online.trim().toLowerCase() !== 'yes')) return false;
+                if (showCommunity && (!p.Community_Partnerships || ['no', 'n/a', 'none', ''].includes(p.Community_Partnerships.trim().toLowerCase()))) return false;
+
+                const matchesSearch = !searchTerm || 
+                    (p.Project_Title && p.Project_Title.toLowerCase().includes(searchTerm)) ||
+                    (p.Faculty_Member_Name && p.Faculty_Member_Name.toLowerCase().includes(searchTerm)) ||
+                    (p.Project_Description && p.Project_Description.toLowerCase().includes(searchTerm)) ||
+                    (p.Anticipated_Competencies && p.Anticipated_Competencies.toLowerCase().includes(searchTerm));
+                
+                const matchesFaculty = !faculty || p.Faculty === faculty;
+                const matchesDept = !dept || p.Department_School_of_Research === dept;
+
+                return matchesSearch && matchesFaculty && matchesDept;
+            });
+
+            // Apply Sorting
+            const sortVal = els.sortFilter.value;
+            if (sortVal === 'titleAsc') {
+                filteredProjects.sort((a, b) => (a.Project_Title || '').localeCompare(b.Project_Title || ''));
+            } else if (sortVal === 'titleDesc') {
+                filteredProjects.sort((a, b) => (b.Project_Title || '').localeCompare(a.Project_Title || ''));
+            } else if (sortVal === 'dateAsc') {
+                filteredProjects.sort((a, b) => {
+                    const dateA = a.Project_End_Date ? new Date(a.Project_End_Date) : new Date('9999-12-31');
+                    const dateB = b.Project_End_Date ? new Date(b.Project_End_Date) : new Date('9999-12-31');
+                    return dateA - dateB;
+                });
+            } else if (sortVal === 'dateDesc') {
+                filteredProjects.sort((a, b) => {
+                    const dateA = a.Project_End_Date ? new Date(a.Project_End_Date) : new Date('1970-01-01');
+                    const dateB = b.Project_End_Date ? new Date(b.Project_End_Date) : new Date('1970-01-01');
+                    return dateB - dateA;
+                });
+            } else if (sortVal === 'newest') {
+                filteredProjects.sort((a, b) => {
+                    const dateA = a.Created ? new Date(a.Created) : new Date('1970-01-01');
+                    const dateB = b.Created ? new Date(b.Created) : new Date('1970-01-01');
+                    return dateB - dateA;
+                });
+            } else if (sortVal === 'oldest') {
+                filteredProjects.sort((a, b) => {
+                    const dateA = a.Created ? new Date(a.Created) : new Date('9999-12-31');
+                    const dateB = b.Created ? new Date(b.Created) : new Date('9999-12-31');
+                    return dateA - dateB;
+                });
+            }
+
+            currentPage = 1;
+            renderProjects(false);
+            if (!els.panelInsights.classList.contains('hidden')) updateCharts();
+        }
+
+        function updateResetButton() {
+            const isFiltering = els.facultyFilter.value || els.departmentFilter.value || els.searchInput.value || 
+                                els.sortFilter.value !== 'default' || els.remoteFilter.checked || els.communityFilter.checked || activeProfessorFilter;
+            els.resetFilters.classList.toggle('hidden', !isFiltering);
+        }
+
+        function resetFilters() {
+            els.searchInput.value = '';
+            els.sortFilter.value = 'default';
+            els.facultyFilter.value = '';
+            els.departmentFilter.value = '';
+            els.remoteFilter.checked = false;
+            els.communityFilter.checked = false;
+            clearProfessorFilter(); // This calls applyFilters
+            updateResetButton();
+        }
+
+        // --- View & UI Toggles ---
+        function switchSidebarTab(tab) {
+            const activeClass = "flex-1 py-2 text-sm font-bold rounded-lg bg-white dark:bg-slate-700 shadow-sm text-primary dark:text-white transition-all";
+            const inactiveClass = "flex-1 py-2 text-sm font-bold rounded-lg text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 transition-all";
+            
+            if (tab === 'filters') {
+                els.btnTabFilters.className = activeClass;
+                els.btnTabInsights.className = inactiveClass;
+                els.panelFilters.classList.remove('hidden');
+                els.panelInsights.classList.add('hidden');
+            } else {
+                els.btnTabInsights.className = activeClass;
+                els.btnTabFilters.className = inactiveClass;
+                els.panelFilters.classList.add('hidden');
+                els.panelInsights.classList.remove('hidden');
+                updateCharts();
+            }
+        }
+
+        function setView(view) {
+            currentView = view;
+            const activeBtnClass = "px-4 py-2 bg-gray-100 dark:bg-slate-700 text-primary dark:text-white transition-colors";
+            const inactiveBtnClass = "px-4 py-2 text-gray-400 dark:text-slate-400 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors";
+            
+            els.btnViewGrid.className = view === 'grid' ? activeBtnClass + " border-r border-gray-200 dark:border-slate-600" : inactiveBtnClass + " border-r border-gray-200 dark:border-slate-600";
+            els.btnViewTimeline.className = view === 'timeline' ? activeBtnClass + " border-r border-gray-200 dark:border-slate-600" : inactiveBtnClass + " border-r border-gray-200 dark:border-slate-600";
+            els.btnViewKanban.className = view === 'kanban' ? activeBtnClass : inactiveBtnClass;
+            
+            currentPage = 1;
+            renderProjects();
+        }
+
+        // --- CRM (Kanban) Logic ---
+        window.toggleStatusDropdown = function(pId, event) {
+            event.stopPropagation();
+            const dropdown = document.getElementById(`dropdown-${pId}`);
+            // close others
+            document.querySelectorAll('.status-dropdown').forEach(el => { if(el !== dropdown) el.classList.add('hidden'); });
+            dropdown.classList.toggle('hidden');
+        }
+        
+        // Close dropdowns if clicked outside
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.status-dropdown').forEach(el => el.classList.add('hidden'));
+        });
+
+        window.updateProjectStatus = function(pId, status, event) {
+            if(event) event.stopPropagation();
+            if (status === 'none') {
+                delete crmState[pId];
+            } else {
+                crmState[pId] = status;
+            }
+            localStorage.setItem('os_crm_data', JSON.stringify(crmState));
+            showToast(status === 'none' ? 'Project removed from Tracker' : `Status updated to ${status.charAt(0).toUpperCase() + status.slice(1)}`);
+            renderProjects(false, true); // soft refresh
+        }
+
+        function updateProjectStatusFromModal() {
+            if(!currentProjectInModal) return;
+            const pId = getProjectId(currentProjectInModal);
+            const status = els.modal.statusSelect.value;
+            updateProjectStatus(pId, status);
+        }
+
+        // --- Match Me Logic ---
+        window.openMatchMe = function() {
+            els.matchMe.overlay.classList.add('active');
+        }
+        window.closeMatchMe = function() {
+            els.matchMe.overlay.classList.remove('active');
+        }
+        window.applyMatchMe = function() {
+            els.facultyFilter.value = els.matchMe.faculty.value;
+            els.remoteFilter.checked = els.matchMe.remote.value === 'yes';
+            els.searchInput.value = els.matchMe.skills.value;
+            
+            closeMatchMe();
+            activeProfessorFilter = null;
+            els.bannerContainer.innerHTML = '';
+            setView('grid');
+            switchSidebarTab('filters');
+            applyFilters();
+            updateResetButton();
+            showToast("Filters applied automatically!");
+        }
+
+        // --- Rendering ---
+        function createProjectCardHTML(project, status, index, isSoftRefresh) {
+            const pId = getProjectId(project);
+            const today = new Date();
+            const term = els.searchInput.value.trim();
+            
+            // Highlight Search Term in Title
+            let displayTitle = highlightText(project.Project_Title || 'Untitled Project', term);
+            let displayDesc = highlightText(project.Project_Description || 'No description provided.', term);
+
+            // Determine End Date Badges
+            let dateBadgeClass = "bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300";
+            let dateIconClass = "ph-calendar-blank";
+            let dateText = `Ends: ${formatDateYYYYMMDD(project.Project_End_Date)}`;
+            
+            if (project.Project_End_Date) {
+                const endDate = new Date(project.Project_End_Date);
+                const daysLeft = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
+                if (!isNaN(daysLeft)) {
+                    if (daysLeft < 0) {
+                        dateBadgeClass = "bg-gray-200 dark:bg-slate-800 text-gray-400 dark:text-gray-500 line-through border border-transparent";
+                        dateText = "Closed";
+                    } else if (daysLeft <= 30) {
+                        dateBadgeClass = "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 font-bold border border-red-200 dark:border-red-800/50";
+                        dateIconClass = "ph-warning-circle text-red-600 dark:text-red-400";
+                        dateText = `Ends in ${daysLeft} Days!`;
+                    }
+                }
+            }
+
+            // Status Badge UI
+            let statusHTML = '';
+            if (status) {
+                const statusMap = {
+                    'shortlisted': { icon: '⭐', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800', label: 'Shortlisted' },
+                    'emailed': { icon: '✉️', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800', label: 'Emailed' },
+                    'interviewing': { icon: '🗣️', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 border-purple-200 dark:border-purple-800', label: 'Interviewing' },
+                    'accepted': { icon: '✅', color: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 border-green-200 dark:border-green-800', label: 'Accepted!' }
+                };
+                const s = statusMap[status];
+                statusHTML = `<span class="absolute top-4 right-4 ${s.color} border px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm z-10">${s.icon} ${s.label}</span>`;
+            } else {
+                statusHTML = `<button onclick="updateProjectStatus('${pId.replace(/'/g, "\\'")}', 'shortlisted', event)" class="absolute top-4 right-4 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors z-10 group" title="Save to Tracker"><i class="ph ph-bookmark-simple text-gray-300 dark:text-slate-600 group-hover:text-accent text-2xl transition-colors"></i></button>`;
+            }
+
+            // Tags
+            let isNew = project.Created && mostRecentDateMs > 0 && ((mostRecentDateMs - new Date(project.Created).getTime()) / (1000 * 60 * 60 * 24) <= 14);
+            const hasCommunity = project.Community_Partnerships && !['no', 'n/a', 'none', ''].includes(project.Community_Partnerships.trim().toLowerCase());
+
+            return `
+                <div class="p-6 flex-1 flex flex-col relative h-full">
+                    ${statusHTML}
+                    
+                    <div class="flex flex-wrap items-start mb-3 gap-2 pr-20">
+                        ${isNew ? `<span class="text-[10px] font-bold uppercase tracking-wider bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 px-2 py-1 rounded-sm border border-green-200 dark:border-green-800 animate-pulse">New!</span>` : ''}
+                        ${hasCommunity ? `<span class="text-[10px] font-bold uppercase tracking-wider bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 px-2 py-1 rounded-sm border border-purple-200 dark:border-purple-800/50" title="Community Partnership"><i class="ph ph-users-three"></i> Partner</span>` : ''}
+                        <span class="text-[10px] sm:text-xs font-bold uppercase tracking-wider bg-blue-50 dark:bg-slate-700 text-primary dark:text-blue-300 px-2.5 py-1 rounded-full border border-blue-100 dark:border-slate-600 truncate max-w-[60%] shadow-sm">
+                            ${project.Faculty || 'N/A'}
+                        </span>
+                    </div>
+                    
+                    <div class="mb-3 flex flex-wrap gap-2">
+                        <span class="text-xs ${dateBadgeClass} px-2.5 py-1 rounded-md whitespace-nowrap flex items-center gap-1.5" title="End Date">
+                            <i class="ph ${dateIconClass} text-sm"></i> ${dateText}
+                        </span>
+                    </div>
+                    
+                    ${(project.Project_ID_Number || project.ID) ? `
+                    <div class="mb-1 flex items-center gap-3 text-[10px] text-gray-400 dark:text-slate-500 font-mono">
+                        ${project.Project_ID_Number ? `<span class="flex items-center gap-1" title="Project ID Number"><i class="ph ph-hash"></i> ${project.Project_ID_Number}</span>` : ''}
+                        ${project.ID ? `<span class="flex items-center gap-1" title="System ID"><i class="ph ph-database"></i> ${project.ID}</span>` : ''}
+                    </div>
+                    ` : ''}
+
+                    <h3 class="text-lg font-bold text-gray-800 dark:text-white mb-2 group-hover:text-primary dark:group-hover:text-blue-400 transition-colors line-clamp-2" title="${project.Project_Title}">
+                        ${displayTitle}
+                    </h3>
+                    <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-1 hover:text-primary dark:hover:text-blue-400 transition-colors inline-block" onclick="event.stopPropagation(); filterByProfessor('${(project.Faculty_Member_Name||'').replace(/'/g, "\\'")}')" title="Filter by this supervisor">
+                        <i class="ph ph-user-circle text-lg"></i> ${project.Faculty_Member_Name || 'Unknown Faculty'}
+                    </p>
+                    <p class="text-sm text-gray-600 dark:text-slate-300 line-clamp-3 mb-4 flex-1">
+                        ${displayDesc}
+                    </p>
+                    <div class="mt-auto pt-4 border-t border-gray-100 dark:border-slate-700 flex items-center text-primary dark:text-blue-400 font-semibold text-sm group-hover:gap-2 transition-all">
+                        View Details <i class="ph ph-arrow-right"></i>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderKanban() {
+            els.projectsContainer.innerHTML = '';
+            els.loadMoreContainer.classList.add('hidden');
+            
+            const columns = [
+                { id: 'shortlisted', title: '⭐ Shortlisted', color: 'border-yellow-300 dark:border-yellow-600', bg:'bg-yellow-50 dark:bg-yellow-900/10' },
+                { id: 'emailed', title: '✉️ Emailed', color: 'border-blue-300 dark:border-blue-600', bg:'bg-blue-50 dark:bg-blue-900/10' },
+                { id: 'interviewing', title: '🗣️ Interviewing', color: 'border-purple-300 dark:border-purple-600', bg:'bg-purple-50 dark:bg-purple-900/10' },
+                { id: 'accepted', title: '✅ Accepted', color: 'border-green-300 dark:border-green-600', bg:'bg-green-50 dark:bg-green-900/10' }
+            ];
+
+            const board = document.createElement('div');
+            board.className = "flex gap-6 overflow-x-auto pb-6 pt-2 w-full kanban-scroll h-full min-h-[60vh]";
+
+            columns.forEach(col => {
+                const colProjects = allProjects.filter(p => crmState[getProjectId(p)] === col.id); // Show all saved, ignore active filters to prevent confusion
+                
+                const colDiv = document.createElement('div');
+                colDiv.className = `min-w-[320px] max-w-[320px] flex flex-col rounded-xl border-t-4 ${col.color} ${col.bg} p-4 kanban-col shadow-sm`;
+                
+                colDiv.innerHTML = `
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-gray-800 dark:text-white">${col.title}</h3>
+                        <span class="bg-white dark:bg-slate-700 text-gray-600 dark:text-gray-300 text-xs font-bold px-2 py-1 rounded-full shadow-sm">${colProjects.length}</span>
+                    </div>
+                    <div class="flex flex-col gap-4 overflow-y-auto pr-1 flex-1">
+                        ${colProjects.length === 0 ? `<p class="text-sm text-gray-400 dark:text-gray-500 italic text-center mt-10">Drag or save projects here.</p>` : ''}
+                    </div>
+                `;
+
+                const listContainer = colDiv.querySelector('.flex-col.gap-4');
+
+                colProjects.forEach(p => {
+                    const pId = getProjectId(p);
+                    const card = document.createElement('div');
+                    card.className = "bg-white dark:bg-darkcard p-4 rounded-xl shadow-sm border border-gray-200 dark:border-slate-700 cursor-pointer hover:border-primary transition-colors relative group";
+                    card.onclick = () => openModal(p);
+                    card.innerHTML = `
+                        <div class="relative">
+                            <button onclick="toggleStatusDropdown('${pId.replace(/'/g, "\\'")}', event)" class="absolute top-0 right-0 p-1 text-gray-400 hover:text-primary dark:hover:text-blue-400 transition-colors z-10">
+                                <i class="ph ph-dots-three text-xl"></i>
+                            </button>
+                            <div id="dropdown-${pId}" class="status-dropdown hidden absolute top-6 right-0 w-36 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg shadow-xl z-20 py-1 text-sm overflow-hidden">
+                                <button onclick="updateProjectStatus('${pId.replace(/'/g, "\\'")}', 'shortlisted', event)" class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-700 dark:text-white">⭐ Shortlisted</button>
+                                <button onclick="updateProjectStatus('${pId.replace(/'/g, "\\'")}', 'emailed', event)" class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-700 dark:text-white">✉️ Emailed</button>
+                                <button onclick="updateProjectStatus('${pId.replace(/'/g, "\\'")}', 'interviewing', event)" class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-700 dark:text-white">🗣️ Interviewing</button>
+                                <button onclick="updateProjectStatus('${pId.replace(/'/g, "\\'")}', 'accepted', event)" class="w-full text-left px-4 py-2 hover:bg-gray-50 dark:hover:bg-slate-700 dark:text-white">✅ Accepted</button>
+                                <div class="border-t border-gray-100 dark:border-slate-600 my-1"></div>
+                                <button onclick="updateProjectStatus('${pId.replace(/'/g, "\\'")}', 'none', event)" class="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30">Remove</button>
+                            </div>
+                        </div>
+                        <p class="text-[10px] font-bold text-primary dark:text-blue-400 uppercase mb-1 pr-6 truncate">${p.Department_School_of_Research || 'Dept'}</p>
+                        <h4 class="text-sm font-bold text-gray-800 dark:text-white line-clamp-2 mb-2 pr-2">${p.Project_Title}</h4>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1"><i class="ph ph-user"></i> ${p.Faculty_Member_Name}</p>
+                    `;
+                    listContainer.appendChild(card);
+                });
+
+                board.appendChild(colDiv);
+            });
+
+            els.projectsContainer.appendChild(board);
+        }
+
+        function renderProjects(isAppending = false, isSoftRefresh = false) {
+            els.projectCount.textContent = `${filteredProjects.length} Projects Available`;
+
+            if (currentView === 'kanban') {
+                renderKanban();
+                return;
+            }
+
+            if (filteredProjects.length === 0) {
+                els.projectsContainer.innerHTML = '';
+                els.noResults.classList.remove('hidden');
+                els.loadMoreContainer.classList.add('hidden');
+                return;
+            }
+            
+            els.noResults.classList.add('hidden');
+
+            let startIndex = isAppending ? (currentPage - 1) * itemsPerPage : 0;
+            let endIndex = isSoftRefresh ? (currentPage * itemsPerPage) : (startIndex + itemsPerPage);
+            const projectsToRender = isSoftRefresh ? filteredProjects.slice(0, endIndex) : filteredProjects.slice(startIndex, endIndex);
+
+            if (currentView === 'grid') {
+                if (!isAppending && !isSoftRefresh) els.projectsContainer.innerHTML = '<div id="projectsGrid" class="grid grid-cols-1 xl:grid-cols-2 gap-6 w-full"></div>';
+                const grid = document.getElementById('projectsGrid');
+                if (isSoftRefresh) grid.innerHTML = '';
+                
+                projectsToRender.forEach((project, index) => {
+                    const delay = isSoftRefresh ? 0 : Math.min(index * 0.05, 0.5); 
+                    const status = crmState[getProjectId(project)];
+                    const card = document.createElement('div');
+                    card.className = 'bg-white dark:bg-darkcard rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden hover:shadow-xl dark:hover:shadow-slate-900/50 transition-all duration-300 flex flex-col cursor-pointer group hover:-translate-y-1';
+                    if (!isSoftRefresh) card.style.animation = `fadeIn 0.5s ease-out ${delay}s both`;
+                    card.onclick = () => openModal(project);
+                    card.innerHTML = createProjectCardHTML(project, status, index, isSoftRefresh);
+                    grid.appendChild(card);
+                });
+            } else if (currentView === 'timeline') {
+                if (!isAppending && !isSoftRefresh) els.projectsContainer.innerHTML = '<div id="projectsTimeline" class="space-y-8 pl-4 border-l-2 border-primary/20 dark:border-blue-800 ml-2 mt-4 w-full"></div>';
+                const timeline = document.getElementById('projectsTimeline');
+                if (isSoftRefresh) timeline.innerHTML = '';
+                
+                let currentMonthYear = '';
+                let timelineProjects = [...projectsToRender].sort((a,b) => {
+                    const dateA = a.Project_End_Date ? new Date(a.Project_End_Date) : new Date('9999-12-31');
+                    const dateB = b.Project_End_Date ? new Date(b.Project_End_Date) : new Date('9999-12-31');
+                    return dateA - dateB;
+                });
+
+                timelineProjects.forEach((project, index) => {
+                    const d = project.Project_End_Date ? new Date(project.Project_End_Date) : null;
+                    const monthYear = d && !isNaN(d.getTime()) ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : 'Ongoing / TBD';
+                    
+                    if (monthYear !== currentMonthYear) {
+                        const header = document.createElement('div');
+                        header.className = "relative -ml-[25px] flex items-center gap-3 mb-4 mt-8";
+                        header.innerHTML = `
+                            <div class="w-12 h-12 bg-blue-50 dark:bg-slate-800 border-2 border-primary dark:border-blue-400 rounded-full flex items-center justify-center text-primary dark:text-blue-400 z-10 shadow-sm">
+                                <i class="ph ph-calendar-blank text-xl"></i>
+                            </div>
+                            <h3 class="text-xl font-bold text-gray-800 dark:text-white">${monthYear}</h3>
+                        `;
+                        timeline.appendChild(header);
+                        currentMonthYear = monthYear;
+                    }
+
+                    const status = crmState[getProjectId(project)];
+                    const card = document.createElement('div');
+                    card.className = 'bg-white dark:bg-darkcard ml-6 rounded-xl border border-gray-200 dark:border-slate-700 overflow-hidden hover:shadow-lg transition-all cursor-pointer group flex flex-col min-h-[200px]';
+                    card.onclick = () => openModal(project);
+                    card.innerHTML = createProjectCardHTML(project, status, index, isSoftRefresh);
+                    timeline.appendChild(card);
+                });
+            }
+
+            if (endIndex >= filteredProjects.length) {
+                els.loadMoreContainer.classList.add('hidden');
+                els.loadMoreContainer.classList.remove('flex');
+            } else {
+                els.loadMoreContainer.classList.remove('hidden');
+                els.loadMoreContainer.classList.add('flex');
+            }
+        }
+
+        // --- Insights Chart Click ---
+        window.handleChartClick = function(filterType, value) {
+            if (filterType === 'faculty') els.facultyFilter.value = value;
+            else if (filterType === 'department') els.departmentFilter.value = value;
+            else if (filterType === 'search') els.searchInput.value = value;
+            else if (filterType === 'remote') els.remoteFilter.checked = value;
+
+            activeProfessorFilter = null; // Clear prof profile
+            els.bannerContainer.innerHTML = '';
+            
+            applyFilters();
+            updateResetButton();
+            switchSidebarTab('filters'); 
+            const displayValue = typeof value === 'boolean' ? (value ? 'Remote / Online' : 'In-Person') : value;
+            showToast(`Filtered by: ${displayValue}`);
+        };
+
+        // --- Chart Logic ---
+        function updateCharts() {
+            if(filteredProjects.length === 0) return;
+            const isDark = document.documentElement.classList.contains('dark');
+            
+            // Adjust colors for dark mode
+            const textColor = isDark ? '#cbd5e1' : '#4b5563'; 
+            const gridColor = isDark ? '#334155' : '#e5e7eb';
+            const themeColors = ['#005596', '#FFCE00', '#10b981', '#f43f5e', '#8b5cf6', '#0ea5e9', '#f97316', '#64748b'];
+
+            Chart.defaults.color = textColor;
+
+            // 1. Projects by Faculty Doughnut Chart
+            const facultyCounts = {};
+            filteredProjects.forEach(p => { facultyCounts[p.Faculty || 'Unknown'] = (facultyCounts[p.Faculty || 'Unknown'] || 0) + 1; });
+
+            const facCtx = document.getElementById('facultyChart').getContext('2d');
+            if (facultyChartInstance) facultyChartInstance.destroy();
+            facultyChartInstance = new Chart(facCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(facultyCounts),
+                    datasets: [{ data: Object.values(facultyCounts), backgroundColor: themeColors, borderWidth: isDark?0:1 }]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, cutout: '55%', 
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 }, padding: 12 } } },
+                    onClick: (e, activeEls) => { if(activeEls.length > 0) handleChartClick('faculty', facultyChartInstance.data.labels[activeEls[0].index]); },
+                    onHover: (e, activeEls) => { e.native.target.style.cursor = activeEls.length > 0 ? 'pointer' : 'default'; }
+                }
+            });
+
+            // 2. Top Departments Doughnut Chart
+            const deptCounts = {};
+            filteredProjects.forEach(p => { deptCounts[p.Department_School_of_Research || 'Unknown'] = (deptCounts[p.Department_School_of_Research || 'Unknown'] || 0) + 1; });
+            const topDepts = Object.entries(deptCounts).sort((a,b) => b[1]-a[1]).slice(0, 6);
+
+            const deptCtx = document.getElementById('departmentChart').getContext('2d');
+            if (departmentChartInstance) departmentChartInstance.destroy();
+            departmentChartInstance = new Chart(deptCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: topDepts.map(d => d[0]),
+                    datasets: [{ data: topDepts.map(d => d[1]), backgroundColor: themeColors, borderWidth: isDark?0:1 }]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, cutout: '55%',
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 }, padding: 12 } } },
+                    onClick: (e, activeEls) => { if(activeEls.length > 0) handleChartClick('department', departmentChartInstance.data.labels[activeEls[0].index]); },
+                    onHover: (e, activeEls) => { e.native.target.style.cursor = activeEls.length > 0 ? 'pointer' : 'default'; }
+                }
+            });
+
+            // 3. Online vs In-Person Pie Chart
+            let onlineCount = 0; let inPersonCount = 0;
+            filteredProjects.forEach(p => { if(p.Research_Completed_Online && p.Research_Completed_Online.trim().toLowerCase() === 'yes') onlineCount++; else inPersonCount++; });
+
+            const onlCtx = document.getElementById('onlineChart').getContext('2d');
+            if (onlineChartInstance) onlineChartInstance.destroy();
+            onlineChartInstance = new Chart(onlCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Remote / Online', 'In-Person / Hybrid'],
+                    datasets: [{ data: [onlineCount, inPersonCount], backgroundColor: ['#10b981', isDark?'#475569':'#cbd5e1'], borderWidth: 0 }]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, cutout: '70%', 
+                    plugins: { legend: { position: 'bottom', labels: {boxWidth:12} } },
+                    onClick: (e, activeEls) => {
+                        if(activeEls.length > 0) {
+                            const label = onlineChartInstance.data.labels[activeEls[0].index];
+                            handleChartClick('remote', label === 'Remote / Online');
+                        }
+                    },
+                    onHover: (e, activeEls) => { e.native.target.style.cursor = activeEls.length > 0 ? 'pointer' : 'default'; }
+                }
+            });
+
+            // 4. Top Competencies Bar Chart
+            const compCounts = {};
+            filteredProjects.forEach(p => {
+                if(!p.Anticipated_Competencies) return;
+                const cleanStr = p.Anticipated_Competencies.replace(/["\[\]]/g, '');
+                const comps = cleanStr.split(/,|\n/).map(c => c.trim()).filter(c => c.length > 3);
+                comps.forEach(c => {
+                    const lowerC = c.toLowerCase();
+                    if(!['and', 'the', 'skills', 'ability', 'knowledge'].includes(lowerC)) {
+                        const titleCased = c.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+                        compCounts[titleCased] = (compCounts[titleCased] || 0) + 1;
+                    }
+                });
+            });
+            const topComps = Object.entries(compCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
+
+            const compCtx = document.getElementById('competenciesChart').getContext('2d');
+            if (competenciesChartInstance) competenciesChartInstance.destroy();
+            competenciesChartInstance = new Chart(compCtx, {
+                type: 'bar',
+                data: {
+                    labels: topComps.map(c => c[0].substring(0,20) + (c[0].length>20?'...':'')),
+                    fullLabels: topComps.map(c => c[0]), 
+                    datasets: [{ label: 'Projects', data: topComps.map(c => c[1]), backgroundColor: '#FFCE00', borderRadius: 4 }]
+                },
+                options: { 
+                    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { 
+                        x: { display: false }, 
+                        y: { grid: {display: false}, border: {display: false}, ticks: {color: textColor} } 
+                    },
+                    onClick: (e, activeEls) => { if(activeEls.length > 0) handleChartClick('search', competenciesChartInstance.data.fullLabels[activeEls[0].index]); },
+                    onHover: (e, activeEls) => { e.native.target.style.cursor = activeEls.length > 0 ? 'pointer' : 'default'; }
+                }
+            });
+
+            // 5. Top Supervisors Leaderboard
+            const supCounts = {};
+            filteredProjects.forEach(p => { supCounts[p.Faculty_Member_Name || 'Unknown'] = (supCounts[p.Faculty_Member_Name || 'Unknown'] || 0) + 1; });
+            const topSups = Object.entries(supCounts).sort((a,b) => b[1]-a[1]).slice(0, 5);
+            
+            const supList = document.getElementById('supervisorList');
+            supList.innerHTML = topSups.map((s, i) => `
+                <li class="flex justify-between items-center py-1.5 px-2 border-b border-gray-50 dark:border-slate-800/50 last:border-0 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700/50 rounded transition-colors" 
+                    onclick="filterByProfessor('${s[0].replace(/'/g, "\\'")}')" title="Filter by ${s[0].replace(/'/g, "&apos;")}">
+                    <span class="flex items-center gap-2 truncate">
+                        <span class="text-xs font-bold text-gray-400 w-4">${i+1}.</span> 
+                        <span class="truncate">${s[0]}</span>
+                    </span>
+                    <span class="bg-blue-50 dark:bg-slate-700 text-primary dark:text-blue-300 text-xs font-bold px-2 py-0.5 rounded-full">${s[1]}</span>
+                </li>
+            `).join('');
+
+            // 6. Word Cloud (Titles)
+            const stopWords = new Set(['and', 'the', 'of', 'in', 'for', 'to', 'with', 'a', 'on', 'using', 'an', 'at', 'by', 'from', 'as', 'into', 'how', 'is', 'are', 'development', 'analysis', 'study', 'based', 'design', 'project', 'new', 'system', 'effect', 'effects', 'towards', 'application', 'data', 'approach']);
+            const wordCounts = {};
+            filteredProjects.forEach(p => {
+                if(!p.Project_Title) return;
+                const words = p.Project_Title.toLowerCase().replace(/[^\w\s-]/g, '').split(/\s+/);
+                words.forEach(w => { if (w.length > 3 && !stopWords.has(w)) wordCounts[w] = (wordCounts[w] || 0) + 1; });
+            });
+            const wordsArray = Object.keys(wordCounts).map(w => ({ key: w, value: wordCounts[w] })).sort((a,b) => b.value - a.value).slice(0, 40);
+
+            const wcCtx = document.getElementById('wordCloudChart').getContext('2d');
+            if (wordCloudInstance) wordCloudInstance.destroy();
+            wordCloudInstance = new Chart(wcCtx, {
+                type: 'wordCloud',
+                data: {
+                    labels: wordsArray.map(d => d.key),
+                    datasets: [{ data: wordsArray.map(d => d.value), color: (ctx) => ['#005596', '#FFCE00', '#10b981', '#f43f5e', '#8b5cf6'][ctx.dataIndex % 5] }]
+                },
+                options: { 
+                    responsive: true, maintainAspectRatio: false, 
+                    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                    onClick: (e, activeEls) => { if(activeEls.length > 0) handleChartClick('search', wordCloudInstance.data.labels[activeEls[0].index]); },
+                    onHover: (e, activeEls) => { e.native.target.style.cursor = activeEls.length > 0 ? 'pointer' : 'default'; }
+                }
+            });
+        }
+
+        // --- Similar Projects Engine ---
+        function renderSimilarProjects(targetProject) {
+            const container = els.modal.similarProjects;
+            container.innerHTML = '';
+            
+            const tId = getProjectId(targetProject);
+            const tDept = targetProject.Department_School_of_Research;
+            const tSup = targetProject.Faculty_Member_Name;
+            const tWords = (targetProject.Project_Title||'').toLowerCase().split(/\s+/).filter(w => w.length > 4);
+
+            const scored = allProjects.filter(p => getProjectId(p) !== tId).map(p => {
+                let score = 0;
+                if (p.Department_School_of_Research === tDept) score += 2;
+                if (p.Faculty_Member_Name === tSup) score += 3;
+                const pWords = (p.Project_Title||'').toLowerCase();
+                tWords.forEach(w => { if (pWords.includes(w)) score += 1; });
+                return { project: p, score: score };
+            });
+
+            const topSimilar = scored.sort((a,b) => b.score - a.score).slice(0, 3);
+
+            if (topSimilar.length === 0 || topSimilar[0].score === 0) {
+                container.innerHTML = '<p class="text-sm text-gray-400 dark:text-gray-500 col-span-3">No closely related projects found.</p>';
+                return;
+            }
+
+            topSimilar.forEach(item => {
+                const p = item.project;
+                const card = document.createElement('div');
+                card.className = "bg-gray-50 dark:bg-slate-800 p-4 rounded-xl border border-gray-200 dark:border-slate-700 cursor-pointer hover:border-primary transition-all";
+                card.onclick = () => { closeModal(); setTimeout(() => openModal(p), 300); };
+                card.innerHTML = `
+                    <p class="text-[10px] font-bold text-primary dark:text-blue-400 uppercase mb-1 truncate">${p.Department_School_of_Research || 'Dept'}</p>
+                    <h4 class="text-sm font-bold text-gray-800 dark:text-white line-clamp-2 mb-2">${p.Project_Title}</h4>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1"><i class="ph ph-user"></i> ${p.Faculty_Member_Name || 'Unknown'}</p>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // --- Modal & Flyer Generation ---
+        window.openModal = function(project) {
+            currentProjectInModal = project;
+            document.body.style.overflow = 'hidden'; 
+            
+            const term = els.searchInput.value.trim();
+
+            els.modal.title.innerHTML = highlightText(project.Project_Title || 'Untitled Project', term);
+            
+            if (project.Project_ID_Number) { els.modal.projectId.textContent = project.Project_ID_Number; els.modal.projectIdWrapper.classList.remove('hidden'); } 
+            else { els.modal.projectIdWrapper.classList.add('hidden'); }
+
+            if (project.ID) { els.modal.systemId.textContent = project.ID; els.modal.systemIdWrapper.classList.remove('hidden'); } 
+            else { els.modal.systemIdWrapper.classList.add('hidden'); }
+            
+            els.modal.faculty.textContent = project.Faculty || 'Faculty N/A';
+            els.modal.dept.textContent = project.Department_School_of_Research || 'Department N/A';
+            els.modal.supervisor.textContent = project.Faculty_Member_Name || 'Unknown';
+            els.modal.postedDate.textContent = formatDateYYYYMMDD(project.Created);
+            els.modal.endDate.textContent = formatDateYYYYMMDD(project.Project_End_Date);
+            
+            els.modal.description.innerHTML = highlightText(project.Project_Description || 'No description available.', term);
+            els.modal.tasks.innerHTML = highlightText(project.Student_Opportunities_and_Tasks || 'No specific tasks outlined.', term);
+            els.modal.competencies.innerHTML = highlightText(project.Anticipated_Competencies || 'Not specified.', term);
+            
+            const emailSubject = encodeURIComponent(`Inquiry regarding research project: ${project.Project_Title || 'Research Project'}`);
+            els.modal.email.textContent = project.Faculty_Contact_Email || 'Not provided';
+            els.modal.email.href = project.Faculty_Contact_Email ? `mailto:${project.Faculty_Contact_Email}?subject=${emailSubject}` : '#';
+            els.modal.phone.textContent = project.Faculty_Phone_Ext || 'Not provided';
+
+            if (project.Research_Completed_Online && project.Research_Completed_Online.trim().toLowerCase() === 'yes') els.modal.onlineBadge.classList.remove('hidden');
+            else els.modal.onlineBadge.classList.add('hidden');
+
+            const status = crmState[getProjectId(project)] || 'none';
+            els.modal.statusSelect.value = status;
+
+            // Ensure els.modal.similarProjects is available before calling renderSimilarProjects
+            if (els.modal.similarProjects) {
+                renderSimilarProjects(project);
+            }
+            els.modal.overlay.classList.add('active');
+        }
+
+        window.closeModal = function() {
+            document.body.style.overflow = ''; 
+            els.modal.overlay.classList.remove('active');
+            currentProjectInModal = null;
+            const url = new URL(window.location);
+            url.searchParams.delete('project');
+            window.history.replaceState({}, '', url);
+        }
+
+        function getProjectUrl() {
+            if (!currentProjectInModal) return window.location.href;
+            return window.location.origin + window.location.pathname + '?project=' + encodeURIComponent(getProjectId(currentProjectInModal));
+        }
+
+        window.copyProjectLink = function() {
+            const url = getProjectUrl();
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(url).then(showToast);
+            } else {
+                const textArea = document.createElement("textarea"); textArea.value = url; document.body.appendChild(textArea);
+                textArea.select(); try { document.execCommand('copy'); showToast(); } catch (err) {} document.body.removeChild(textArea);
+            }
+        }
+
+        window.generatePoster = function() {
+            if (!currentProjectInModal) return;
+            const p = currentProjectInModal;
+            
+            showToast("Generating Flyer PDF...");
+
+            // Populate Flyer Template
+            document.getElementById('flyerTitle').textContent = p.Project_Title || 'Research Project';
+            document.getElementById('flyerSupervisor').textContent = p.Faculty_Member_Name || 'UWindsor Faculty';
+            document.getElementById('flyerDept').textContent = `${p.Faculty || ''} - ${p.Department_School_of_Research || ''}`;
+            document.getElementById('flyerDesc').textContent = p.Project_Description || 'No description provided.';
+            document.getElementById('flyerTasks').textContent = p.Student_Opportunities_and_Tasks || 'N/A';
+            document.getElementById('flyerComps').textContent = p.Anticipated_Competencies || 'N/A';
+            document.getElementById('flyerEmail').textContent = p.Faculty_Contact_Email || 'Contact department for details';
+
+            // Generate QR Code
+            const qrContainer = document.getElementById('flyerQR');
+            qrContainer.innerHTML = ''; // clear previous
+            new QRCode(qrContainer, { text: getProjectUrl(), width: 100, height: 100, colorDark: "#005596", colorLight: "#ffffff" });
+
+            // Generate PDF
+            const element = document.getElementById('flyerTemplate');
+            const opt = {
+                margin: 0,
+                filename: `Flyer_${(p.Faculty_Member_Name||'').replace(/\s+/g,'_')}.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2 },
+                jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+            };
+
+            setTimeout(() => { html2pdf().set(opt).from(element).save(); }, 500); // short delay to let QR render
+        }
+
+        window.showToast = function(msg = "Link copied to clipboard!") {
+            els.toastMsg.textContent = msg;
+            els.toast.classList.add('show');
+            setTimeout(() => els.toast.classList.remove('show'), 3000);
+        }
+
+        // --- Data Export ---
+        window.exportShortlist = function() {
+            const savedData = allProjects.filter(p => !!crmState[getProjectId(p)]);
+            if (savedData.length === 0) return alert("You don't have any saved projects to export.");
+            // Append the Status to the export
+            const exportData = savedData.map(p => ({ ...p, Tracker_Status: crmState[getProjectId(p)].toUpperCase() }));
+            
+            const csv = Papa.unparse(exportData);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            if (link.download !== undefined) {
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", "My_Application_Tracker.csv");
+                document.body.appendChild(link); link.click(); document.body.removeChild(link);
+            }
+        }
+
+        // --- Drag and Drop Logic ---
+        function setupDragAndDrop() {
+            const dropZone = document.getElementById('uploadState');
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); }, false));
+            ['dragenter', 'dragover'].forEach(ev => dropZone.addEventListener(ev, () => dropZone.classList.add('border-primary', 'bg-blue-50/50'), false));
+            ['dragleave', 'drop'].forEach(ev => dropZone.addEventListener(ev, () => dropZone.classList.remove('border-primary', 'bg-blue-50/50'), false));
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault(); e.stopPropagation(); dropZone.classList.remove('border-primary', 'bg-blue-50/50');
+                const file = e.dataTransfer.files[0];
+                if (file && file.name.endsWith('.csv')) {
+                    Papa.parse(file, { header: true, skipEmptyLines: true, complete: function(results) { processData(results.data); } });
+                } else { alert("Please drop a valid .csv file."); }
+            }, false);
+        }
+
+    </script>
+</body>
+</html>
