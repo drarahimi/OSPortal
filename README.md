@@ -44,46 +44,6 @@ This project is entirely client-side, requiring no backend database or server in
 
 ---
 
-## 🚀 Getting Started
-
-Because OSPortal is a static application, running it locally is incredibly simple.
-
-### Prerequisites
-- A modern web browser (Chrome, Firefox, Edge, Safari).
-- A local web server (to avoid CORS issues when the browser attempts to fetch the CSV file).
-
-### Installation & Execution
-
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/drarahimi/osportal.git](https://github.com/drarahimi/osportal.git)
-   cd osportal
-
-```
-
-2. **Ensure the CSV file is present:**
-Verify that your `Available Projects.csv` file is located in the root directory alongside `index.html`.
-3. **Serve the files locally:**
-You can use any simple HTTP server. For example, if you have Python installed:
-```bash
-# Python 3
-python -m http.server 8000
-
-```
-
-
-Or using Node.js:
-```bash
-npx http-server
-
-```
-
-
-4. **Open the application:**
-Navigate to `http://localhost:8000` in your web browser.
-
----
-
 ## 📂 Data Format
 
 The application expects the `Available Projects.csv` file to contain the following key column headers. (The parser is robust and will gracefully handle missing fields):
